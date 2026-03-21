@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MEDPRO — Media Processor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Variables ─────────────────────────────────────────────────── */
+    :root {
+      --bg:        #0a0a0b;
+      --surface:   #111114;
+      --panel:     #18181d;
+      --border:    #2a2a33;
+      --border2:   #3a3a46;
+      --amber:     #f5a623;
+      --amber-dim: #c4831a;
+      --amber-glow:#f5a62322;
+      --green:     #3dd68c;
+      --red:       #ff4d4d;
+      --text:      #e8e6e0;
+      --muted:     #7a7880;
+      --mono:      'Space Mono', monospace;
+      --sans:      'Syne', sans-serif;
+    }
+
+    /* ── Reset ─────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Noise texture overlay ─────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      pointer-events: none;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      background-size: 200px 200px;
+      opacity: 0.35;
+    }
+
+    /* ── Scanline ──────────────────────────────────────────────────── */
+    body::after {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.07) 2px,
+        rgba(0,0,0,0.07) 4px
+      );
+    }
+
+    /* ── Layout ────────────────────────────────────────────────────── */
+    .wrapper {
+      position: relative; z-index: 1;
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+
+    /* ── Header ────────────────────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 36px 0 48px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 56px;
+      animation: fadeDown .5s ease both;
+    }
+
+    .logo {
+      display: flex; align-items: center; gap: 14px;
+    }
+
+    .logo-mark {
+      width: 42px; height: 42px;
+      background: var(--amber);
+      clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--mono);
+      font-size: 15px; font-weight: 700;
+      color: #000;
+    }
+
+    .logo-text {
+      font-family: var(--sans);
+      font-weight: 800;
+      font-size: 22px;
+      letter-spacing: 0.06em;
+      color: var(--text);
+    }
+    .logo-text span { color: var(--amber); }
+
+    .badge {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      letter-spacing: 0.1em;
+    }
+
+    /* ── Section label ─────────────────────────────────────────────── */
+    .section-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      color: var(--amber);
+      text-transform: uppercase;
+      margin-bottom: 20px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .section-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── Card / Panel ──────────────────────────────────────────────── */
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      padding: 32px;
+      margin-bottom: 32px;
+      position: relative;
+      animation: fadeUp .5s ease both;
+    }
+    .card::before {
+      content: '';
+      position: absolute; top: 0; left: 0;
+      width: 3px; height: 100%;
+      background: var(--amber);
+    }
+
+    /* ── Form ──────────────────────────────────────────────────────── */
+    .form-group { margin-bottom: 24px; }
+
+    label {
+      display: block;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    input[type="url"], input[type="text"], select {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 0;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13px;
+      padding: 14px 16px;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+      -webkit-appearance: none;
+    }
+
+    input[type="url"]:focus, select:focus {
+      border-color: var(--amber);
+      box-shadow: 0 0 0 3px var(--amber-glow);
+    }
+
+    select {
+      cursor: pointer;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23f5a623' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 16px center;
+      padding-right: 44px;
+    }
+
+    /* ── Operation grid ────────────────────────────────────────────── */
+    .op-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .op-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 20px 16px;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      text-align: center;
+      position: relative;
+      user-select: none;
+    }
+    .op-card input { display: none; }
+    .op-card:hover { border-color: var(--border2); }
+    .op-card.selected {
+      border-color: var(--amber);
+      background: var(--amber-glow);
+    }
+    .op-card.selected::after {
+      content: '';
+      position: absolute; top: 8px; right: 8px;
+      width: 8px; height: 8px;
+      background: var(--amber);
+      border-radius: 50%;
+    }
+
+    .op-icon {
+      font-size: 26px;
+      margin-bottom: 10px;
+      display: block;
+    }
+    .op-name {
+      font-family: var(--sans);
+      font-weight: 600;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      display: block;
+      margin-bottom: 4px;
+    }
+    .op-desc {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    /* ── Submit button ─────────────────────────────────────────────── */
+    .submit-btn {
+      width: 100%;
+      background: var(--amber);
+      color: #000;
+      border: none;
+      font-family: var(--sans);
+      font-weight: 800;
+      font-size: 14px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      padding: 18px;
+      cursor: pointer;
+      transition: background .15s, transform .1s;
+      margin-top: 4px;
+      position: relative;
+      overflow: hidden;
+    }
+    .submit-btn:hover { background: #ffc043; }
+    .submit-btn:active { transform: scale(0.993); }
+    .submit-btn:disabled {
+      background: var(--border2);
+      color: var(--muted);
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* ── Progress / Status ─────────────────────────────────────────── */
+    #statusBox {
+      display: none;
+      padding: 24px 32px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      margin-bottom: 32px;
+      animation: fadeUp .3s ease both;
+    }
+
+    .status-header {
+      display: flex; align-items: center; gap: 12px;
+      font-family: var(--mono);
+      font-size: 12px;
+      margin-bottom: 16px;
+    }
+
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid var(--border2);
+      border-top-color: var(--amber);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+
+    .progress-bar-wrap {
+      height: 3px;
+      background: var(--border);
+      overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%;
+      background: var(--amber);
+      transition: width 0.4s ease;
+      width: 0%;
+    }
+
+    .status-stage {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 10px;
+    }
+    .status-stage span { color: var(--amber); }
+
+    /* ── Log console ───────────────────────────────────────────────── */
+    .log-console {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 16px;
+      margin-top: 16px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      max-height: 100px;
+      overflow-y: auto;
+      line-height: 1.8;
+    }
+    .log-line { opacity: 0; animation: fadeIn .3s ease forwards; }
+    .log-ok { color: var(--green); }
+    .log-err { color: var(--red); }
+    .log-info { color: var(--amber); }
+
+    /* ── Result panel ──────────────────────────────────────────────── */
+    #resultBox {
+      display: none;
+      animation: fadeUp .5s ease both;
+    }
+
+    .result-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .result-card::before {
+      content: '';
+      display: block;
+      height: 3px;
+      background: var(--green);
+    }
+
+    .result-header {
+      padding: 20px 28px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .result-title {
+      font-weight: 600;
+      font-size: 14px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .result-dot {
+      width: 8px; height: 8px;
+      background: var(--green);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--green);
+    }
+
+    .result-body { padding: 28px; }
+
+    img#thumbResult {
+      width: 100%;
+      max-height: 480px;
+      object-fit: contain;
+      background: #000;
+      display: block;
+    }
+
+    video#videoResult, audio#audioResult {
+      width: 100%;
+      display: block;
+      margin-bottom: 16px;
+    }
+
+    audio#audioResult {
+      margin-top: 40px;
+      filter: invert(1) hue-rotate(180deg);
+    }
+
+    .audio-wave {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 32px 28px;
+      display: flex; align-items: center; gap: 4px;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+    .wave-bar {
+      width: 4px;
+      background: var(--amber);
+      border-radius: 2px;
+      animation: wave 1.2s ease-in-out infinite;
+    }
+
+    .download-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: transparent;
+      border: 1px solid var(--amber);
+      color: var(--amber);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 10px 20px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background .15s, color .15s;
+    }
+    .download-btn:hover {
+      background: var(--amber);
+      color: #000;
+    }
+
+    /* ── Error box ─────────────────────────────────────────────────── */
+    #errorBox {
+      display: none;
+      border: 1px solid var(--red);
+      background: #1a0808;
+      padding: 20px 24px;
+      margin-bottom: 32px;
+      animation: fadeUp .3s ease both;
+    }
+    .error-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.15em;
+      color: var(--red);
+      margin-bottom: 8px;
+    }
+    #errorMsg {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: #ff8080;
+    }
+
+    /* ── Footer ────────────────────────────────────────────────────── */
+    footer {
+      margin-top: 80px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      animation: fadeIn 1s ease both;
+    }
+
+    /* ── Keyframes ─────────────────────────────────────────────────── */
+    @keyframes fadeDown {
+      from { opacity: 0; transform: translateY(-16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes wave {
+      0%, 100% { height: 8px;  }
+      50%       { height: 32px; }
+    }
+
+    /* ── Responsive ────────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      .op-grid { grid-template-columns: 1fr; }
+      header { flex-direction: column; gap: 16px; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- ── Header ─────────────────────────────────────────────────────── -->
+  <header>
+    <div class="logo">
+      <div class="logo-mark">M</div>
+      <span class="logo-text">MED<span>PRO</span></span>
+    </div>
+    <div class="badge">FFmpeg Pipeline v1.0</div>
+  </header>
+
+  <!-- ── Input Card ──────────────────────────────────────────────────── -->
+  <div class="section-label">01 — Configure Job</div>
+  <div class="card" style="animation-delay:.05s">
+    <div class="form-group">
+      <label>Media URL</label>
+      <input
+        type="url"
+        id="mediaUrl"
+        placeholder="https://example.com/video.mp4"
+        autocomplete="off"
+        spellcheck="false"
+      />
+    </div>
+
+    <div class="form-group">
+      <label>Operation</label>
+      <div class="op-grid" id="opGrid">
+        <label class="op-card selected">
+          <input type="radio" name="operation" value="thumbnail" checked />
+          <span class="op-icon">🖼</span>
+          <span class="op-name">Thumbnail</span>
+          <span class="op-desc">Extract frame @ 2s</span>
+        </label>
+        <label class="op-card">
+          <input type="radio" name="operation" value="compress" />
+          <span class="op-icon">📦</span>
+          <span class="op-name">Compress</span>
+          <span class="op-desc">Reduce file size</span>
+        </label>
+        <label class="op-card">
+          <input type="radio" name="operation" value="audio" />
+          <span class="op-icon">🎵</span>
+          <span class="op-name">Extract Audio</span>
+          <span class="op-desc">Export MP3 @ 192k</span>
+        </label>
+      </div>
+    </div>
+
+    <button class="submit-btn" id="submitBtn" onclick="startJob()">
+      ▶ &nbsp; Submit Job
+    </button>
+  </div>
+
+  <!-- ── Status ──────────────────────────────────────────────────────── -->
+  <div id="statusBox">
+    <div class="section-label">02 — Processing</div>
+    <div class="status-header">
+      <div class="spinner" id="spinner"></div>
+      <span id="statusText">Initialising…</span>
+    </div>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <div class="status-stage">Stage: <span id="stageLabel">queued</span></div>
+    <div class="log-console" id="logConsole"></div>
+  </div>
+
+  <!-- ── Error ───────────────────────────────────────────────────────── -->
+  <div id="errorBox">
+    <div class="error-label">✕ &nbsp; Job Failed</div>
+    <div id="errorMsg"></div>
+  </div>
+
+  <!-- ── Result ──────────────────────────────────────────────────────── -->
+  <div id="resultBox">
+    <div class="section-label">03 — Output</div>
+    <div class="result-card">
+      <div class="result-header">
+        <div class="result-title">
+          <div class="result-dot"></div>
+          <span id="resultTitle">Processing Complete</span>
+        </div>
+        <a id="downloadBtn" class="download-btn" download>
+          ↓ &nbsp; Download
+        </a>
+      </div>
+      <div class="result-body">
+        <img id="thumbResult" style="display:none" alt="Thumbnail" />
+        <video id="videoResult" controls style="display:none"></video>
+
+        <!-- Audio -->
+        <div class="audio-wave" id="audioWave" style="display:none">
+          <!-- 20 bars with staggered delays -->
+          <script>
+            for (let i = 0; i < 20; i++) {
+              document.write(
+                `<div class="wave-bar" style="height:${8 + Math.random()*24}px;animation-delay:${(i * 0.08).toFixed(2)}s"></div>`
+              );
+            }
+          </script>
+        </div>
+        <audio id="audioResult" controls style="display:none"></audio>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Footer ──────────────────────────────────────────────────────── -->
+  <footer>
+    <span>MEDPRO — FFmpeg Media Processor</span>
+    <span id="footerStatus">READY</span>
+  </footer>
+
+</div>
+
+<!-- ── Script ─────────────────────────────────────────────────────────── -->
+<script>
+  const API_BASE = ''; // same server serves API + frontend
+  let pollTimer = null;
+
+  // ── Op card selection ──────────────────────────────────────────────
+  document.querySelectorAll('.op-card').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.op-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+    });
+  });
+
+  // ── Log helper ────────────────────────────────────────────────────
+  function log(msg, type = '') {
+    const el = document.getElementById('logConsole');
+    const line = document.createElement('div');
+    line.className = 'log-line' + (type ? ' log-' + type : '');
+    line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    el.appendChild(line);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  // ── Progress stages ────────────────────────────────────────────────
+  const STAGES = { queued: 10, downloading: 35, processing: 70, complete: 100 };
+
+  function setProgress(stage) {
+    const pct = STAGES[stage] ?? 50;
+    document.getElementById('progressBar').style.width = pct + '%';
+    document.getElementById('stageLabel').textContent = stage;
+  }
+
+  // ── Reset UI ──────────────────────────────────────────────────────
+  function resetUI() {
+    clearInterval(pollTimer);
+    ['statusBox','errorBox','resultBox'].forEach(id => {
+      document.getElementById(id).style.display = 'none';
+    });
+    ['thumbResult','videoResult','audioResult','audioWave'].forEach(id => {
+      const el = document.getElementById(id);
+      el.style.display = 'none';
+    });
+    document.getElementById('logConsole').innerHTML = '';
+    document.getElementById('progressBar').style.width = '0%';
+  }
+
+  // ── Show error ────────────────────────────────────────────────────
+  function showError(msg) {
+    document.getElementById('statusBox').style.display = 'none';
+    const box = document.getElementById('errorBox');
+    document.getElementById('errorMsg').textContent = msg;
+    box.style.display = 'block';
+    document.getElementById('submitBtn').disabled = false;
+    document.getElementById('footerStatus').textContent = 'ERROR';
+    log(msg, 'err');
+  }
+
+  // ── Show result ───────────────────────────────────────────────────
+  function showResult(outputUrl, operation) {
+    const fullUrl = API_BASE + outputUrl;
+    document.getElementById('statusBox').style.display = 'none';
+
+    const dl = document.getElementById('downloadBtn');
+    dl.href = fullUrl;
+    dl.setAttribute('download', outputUrl.split('/').pop());
+
+    const resultBox = document.getElementById('resultBox');
+
+    if (operation === 'thumbnail') {
+      document.getElementById('resultTitle').textContent = '🖼  Thumbnail Extracted';
+      const img = document.getElementById('thumbResult');
+      img.src = fullUrl;
+      img.style.display = 'block';
+    } else if (operation === 'compress') {
+      document.getElementById('resultTitle').textContent = '📦  Compressed Video';
+      const vid = document.getElementById('videoResult');
+      vid.src = fullUrl;
+      vid.style.display = 'block';
+    } else if (operation === 'audio') {
+      document.getElementById('resultTitle').textContent = '🎵  Audio Extracted';
+      document.getElementById('audioWave').style.display = 'flex';
+      const aud = document.getElementById('audioResult');
+      aud.src = fullUrl;
+      aud.style.display = 'block';
+    }
+
+    resultBox.style.display = 'block';
+    resultBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('submitBtn').disabled = false;
+    document.getElementById('footerStatus').textContent = 'DONE';
+    log('Output ready: ' + outputUrl, 'ok');
+  }
+
+  // ── Poll job status ───────────────────────────────────────────────
+  async function pollStatus(jobId, operation) {
+    try {
+      const res = await fetch(`${API_BASE}/status/${jobId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      if (data.status === 'pending') {
+        const stage = data.message || 'processing';
+        setProgress(stage);
+        document.getElementById('statusText').textContent =
+          stage === 'downloading' ? 'Downloading media…' :
+          stage === 'processing'  ? 'Running FFmpeg pipeline…' :
+          'Queued — waiting for worker…';
+        if (stage === 'processing') log('FFmpeg subprocess started', 'info');
+        return; // keep polling
+      }
+
+      clearInterval(pollTimer);
+
+      if (data.status === 'success') {
+        setProgress('complete');
+        document.getElementById('statusText').textContent = 'Complete!';
+        log('FFmpeg process exited successfully', 'ok');
+        setTimeout(() => showResult(data.output, operation), 600);
+      } else {
+        showError(data.message || 'Unknown error');
+      }
+
+    } catch (err) {
+      clearInterval(pollTimer);
+      showError('Network error: ' + err.message);
+    }
+  }
+
+  // ── Submit ─────────────────────────────────────────────────────────
+  async function startJob() {
+    resetUI();
+
+    const url = document.getElementById('mediaUrl').value.trim();
+    const operation = document.querySelector('input[name="operation"]:checked')?.value;
+
+    if (!url) { showError('Please enter a media URL.'); return; }
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      showError('URL must start with http:// or https://'); return;
+    }
+    if (!operation) { showError('Please select an operation.'); return; }
+
+    document.getElementById('submitBtn').disabled = true;
+    document.getElementById('statusBox').style.display = 'block';
+    document.getElementById('footerStatus').textContent = 'PROCESSING';
+    setProgress('queued');
+    document.getElementById('statusText').textContent = 'Submitting job…';
+    log('Job submitted: ' + operation.toUpperCase(), 'info');
+
+    try {
+      const res = await fetch(`${API_BASE}/process`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, operation }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Server error' }));
+        throw new Error(err.detail || JSON.stringify(err));
+      }
+
+      const data = await res.json();
+      const jobId = data.job_id;
+      log(`Job ID: ${jobId}`, 'ok');
+
+      // Poll every 2 seconds
+      pollTimer = setInterval(() => pollStatus(jobId, operation), 2000);
+
+    } catch (err) {
+      showError(err.message);
+    }
+  }
+
+  // Allow Enter key on URL field to submit
+  document.getElementById('mediaUrl').addEventListener('keydown', e => {
+    if (e.key === 'Enter') startJob();
+  });
+</script>
+</body>
+</html>
