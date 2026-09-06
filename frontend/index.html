@@ -397,6 +397,18 @@
       animation: wave 1.2s ease-in-out infinite;
     }
 
+    #analysisResult {
+      display: none;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 18px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.65;
+      white-space: pre-wrap;
+      overflow-x: auto;
+    }
+
     .download-btn {
       display: inline-flex;
       align-items: center;
@@ -529,6 +541,12 @@
           <span class="op-name">Extract Audio</span>
           <span class="op-desc">Export MP3 @ 192k</span>
         </label>
+        <label class="op-card">
+          <input type="radio" name="operation" value="analyze" />
+          <span class="op-icon">📊</span>
+          <span class="op-name">Analyze Media</span>
+          <span class="op-desc">Inspect codec + stats</span>
+        </label>
       </div>
     </div>
 
@@ -586,6 +604,7 @@
           </script>
         </div>
         <audio id="audioResult" controls style="display:none"></audio>
+        <pre id="analysisResult"></pre>
       </div>
     </div>
   </div>
@@ -636,7 +655,7 @@
     ['statusBox','errorBox','resultBox'].forEach(id => {
       document.getElementById(id).style.display = 'none';
     });
-    ['thumbResult','videoResult','audioResult','audioWave'].forEach(id => {
+    ['thumbResult','videoResult','audioResult','audioWave','analysisResult'].forEach(id => {
       const el = document.getElementById(id);
       el.style.display = 'none';
     });
@@ -656,13 +675,18 @@
   }
 
   // ── Show result ───────────────────────────────────────────────────
-  function showResult(outputUrl, operation) {
-    const fullUrl = API_BASE + outputUrl;
+  function showResult(outputUrl, operation, analysis) {
+    const fullUrl = outputUrl ? API_BASE + outputUrl : null;
     document.getElementById('statusBox').style.display = 'none';
 
     const dl = document.getElementById('downloadBtn');
-    dl.href = fullUrl;
-    dl.setAttribute('download', outputUrl.split('/').pop());
+    if (outputUrl) {
+      dl.style.display = 'inline-flex';
+      dl.href = fullUrl;
+      dl.setAttribute('download', outputUrl.split('/').pop());
+    } else {
+      dl.style.display = 'none';
+    }
 
     const resultBox = document.getElementById('resultBox');
 
@@ -682,6 +706,11 @@
       const aud = document.getElementById('audioResult');
       aud.src = fullUrl;
       aud.style.display = 'block';
+    } else if (operation === 'analyze') {
+      document.getElementById('resultTitle').textContent = '📊  Media Analysis Report';
+      const report = document.getElementById('analysisResult');
+      report.textContent = JSON.stringify(analysis || { message: 'No analysis data returned.' }, null, 2);
+      report.style.display = 'block';
     }
 
     resultBox.style.display = 'block';
@@ -715,7 +744,7 @@
         setProgress('complete');
         document.getElementById('statusText').textContent = 'Complete!';
         log('FFmpeg process exited successfully', 'ok');
-        setTimeout(() => showResult(data.output, operation), 600);
+        setTimeout(() => showResult(data.output, operation, data.analysis), 600);
       } else {
         showError(data.message || 'Unknown error');
       }

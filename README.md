@@ -11,6 +11,7 @@ A full-stack media processing web app. Paste a video URL, choose an operation, a
 - 🖼 **Thumbnail** — Extract a JPEG frame at 2 seconds
 - 📦 **Compress** — Reduce video size using H.264 encoding
 - 🎵 **Extract Audio** — Export MP3 audio at 192kbps
+- 📊 **Analyze Media** — Inspect codec, bitrate, duration, resolution, and audio properties
 - ⚡ Async job queue — non-blocking processing with live progress UI
 - 🛡 Injection-safe — FFmpeg called via subprocess list args, never shell strings
 - 🐳 Docker ready — one command full-stack launch
@@ -80,7 +81,7 @@ Visit → http://localhost:8000
 | Field | Type | Values |
 |-------|------|--------|
 | `url` | string | Any public HTTP/HTTPS media URL |
-| `operation` | string | `thumbnail` · `compress` · `audio` |
+| `operation` | string | `thumbnail` · `compress` · `audio` · `analyze` |
 
 **Response**
 ```json
@@ -102,6 +103,23 @@ Visit → http://localhost:8000
   "output": "/files/a3f9c1d2...jpg",
   "job_id": "...",
   "operation": "thumbnail"
+}
+```
+
+**Analyze Success**
+```json
+{
+  "status": "success",
+  "job_id": "...",
+  "operation": "analyze",
+  "analysis": {
+    "container": "mov,mp4,m4a,3gp,3g2,mj2",
+    "duration_seconds": 596.458,
+    "size_bytes": 158008374,
+    "bitrate_kbps": 2119.52,
+    "video": { "codec": "h264", "width": 1280, "height": 720, "fps": 23.976 },
+    "audio": { "codec": "aac", "channels": 2, "sample_rate_hz": 44100 }
+  }
 }
 ```
 
@@ -127,6 +145,7 @@ Visit → http://localhost:8000
 | Thumbnail | `ffmpeg -y -i input -ss 00:00:02 -vframes 1 -q:v 2 output.jpg` |
 | Compress | `ffmpeg -y -i input -vcodec libx264 -crf 28 -preset fast -acodec aac -b:a 128k output.mp4` |
 | Audio | `ffmpeg -y -i input -vn -acodec libmp3lame -ab 192k -ar 44100 output.mp3` |
+| Analyze | `ffprobe -v error -print_format json -show_format -show_streams input` |
 
 All commands use **`subprocess.run(list, ...)`** — no shell interpolation, no injection risk.
 

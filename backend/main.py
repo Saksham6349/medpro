@@ -5,8 +5,9 @@ import subprocess
 import tempfile
 import logging
 import re
+import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 import httpx
 from fastapi import FastAPI, BackgroundTasks, HTTPException
@@ -54,7 +55,7 @@ if not FRONTEND_DIR.exists():
 # ── Models ──────────────────────────────────────────────────────────────────────
 class ProcessRequest(BaseModel):
     url: str
-    operation: str   # thumbnail | compress | audio
+    operation: str   # thumbnail | compress | audio | analyze
 
     @field_validator("url")
     @classmethod
@@ -70,7 +71,7 @@ class ProcessRequest(BaseModel):
     @field_validator("operation")
     @classmethod
     def validate_operation(cls, v: str) -> str:
-        allowed = {"thumbnail", "compress", "audio"}
+        allowed = {"thumbnail", "compress", "audio", "analyze"}
         v = v.lower().strip()
         if v not in allowed:
             raise ValueError(f"Operation must be one of: {allowed}")
@@ -82,6 +83,7 @@ class ProcessResponse(BaseModel):
     message: Optional[str] = None
     job_id: Optional[str] = None
     operation: Optional[str] = None
+    analysis: Optional[dict[str, Any]] = None
 
 # ── In-memory job store (replace with Redis / DB for production) ─────────────────
 jobs: dict[str, dict] = {}
@@ -172,12 +174,80 @@ def build_ffmpeg_cmd(operation: str, input_path: str, output_path: str) -> list[
 
     raise ValueError(f"Unknown operation: {operation}")
 
+
+def _safe_int(value: Any) -> Optional[int]:
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_float(value: Any) -> Optional[float]:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_fps(rate: str) -> Optional[float]:
+    if not rate or rate == "0/0":
+        return None
+    if "/" in rate:
+        num, den = rate.split("/", 1)
+        num_f = _safe_float(num)
+        den_f = _safe_float(den)
+        if not num_f or not den_f:
+            return None
+        return round(num_f / den_f, 3)
+    value = _safe_float(rate)
+    return round(value, 3) if value else None
+
+
+def extract_media_metadata(input_path: Path) -> dict[str, Any]:
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-print_format", "json", "-show_format", "-show_streams", str(input_path)],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if probe.returncode != 0:
+        raise RuntimeError("Failed to inspect media metadata")
+
+    payload = json.loads(probe.stdout or "{}")
+    streams = payload.get("streams", [])
+    fmt = payload.get("format", {})
+
+    video_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
+    audio_stream = next((s for s in streams if s.get("codec_type") == "audio"), None)
+
+    return {
+        "container": fmt.get("format_name"),
+        "duration_seconds": _safe_float(fmt.get("duration")),
+        "size_bytes": _safe_int(fmt.get("size")),
+        "bitrate_kbps": round((_safe_float(fmt.get("bit_rate")) or 0) / 1000, 2) if fmt.get("bit_rate") else None,
+        "video": {
+            "codec": video_stream.get("codec_name") if video_stream else None,
+            "width": _safe_int(video_stream.get("width")) if video_stream else None,
+            "height": _safe_int(video_stream.get("height")) if video_stream else None,
+            "fps": _parse_fps(video_stream.get("r_frame_rate", "")) if video_stream else None,
+        },
+        "audio": {
+            "codec": audio_stream.get("codec_name") if audio_stream else None,
+            "channels": _safe_int(audio_stream.get("channels")) if audio_stream else None,
+            "sample_rate_hz": _safe_int(audio_stream.get("sample_rate")) if audio_stream else None,
+        },
+    }
+
 async def process_job(job_id: str, url: str, operation: str) -> None:
     """Full processing pipeline – runs in a background task."""
     input_path = TEMP_DIR / f"{job_id}_input"
     ext_map = {"thumbnail": ".jpg", "compress": ".mp4", "audio": ".mp3"}
-    output_filename = f"{job_id}{ext_map[operation]}"
-    output_path = OUTPUT_DIR / output_filename
+    output_filename = f"{job_id}{ext_map[operation]}" if operation in ext_map else None
+    output_path = OUTPUT_DIR / output_filename if output_filename else None
 
     try:
         # 1 – Download
@@ -193,6 +263,18 @@ async def process_job(job_id: str, url: str, operation: str) -> None:
         )
         if probe.returncode != 0:
             raise RuntimeError("File does not appear to be valid media (ffprobe failed)")
+
+        if operation == "analyze":
+            jobs[job_id]["stage"] = "processing"
+            analysis = extract_media_metadata(input_path)
+            jobs[job_id].update({
+                "status": "done",
+                "stage": "complete",
+                "operation": operation,
+                "analysis": analysis,
+            })
+            logger.info("[%s] Analysis complete", job_id)
+            return
 
         # 3 – Process
         jobs[job_id]["stage"] = "processing"
@@ -265,9 +347,10 @@ async def get_status(job_id: str):
     if job["status"] == "done":
         return ProcessResponse(
             status="success",
-            output=job["output_url"],
+            output=job.get("output_url"),
             job_id=job_id,
             operation=job.get("operation"),
+            analysis=job.get("analysis"),
         )
     if job["status"] == "error":
         return ProcessResponse(
